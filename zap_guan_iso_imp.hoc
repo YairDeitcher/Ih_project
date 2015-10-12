@@ -1,0 +1,143 @@
+// Mickey London (2014) 
+// Iso potential cell with Ih - check how the spectrum changes when ZAP current is 
+// injected and when Ih activation curve is shifted
+
+
+//====================== General files and tools =====================
+load_file("nrngui.hoc")
+
+//====================== cvode =======================================
+objref cvode
+
+cvode = new CVode()
+cvode.active(0)
+dt = 1
+tstop = 28000
+
+
+v_init = -70 //-65
+Z0 = 48e6 // this is the Impedance at zero frequency at the guanfacine condition
+tau_m = 14 // this is dictated by the slope of the impedance curve
+delta_Z = 8e6  //12e6// difference between the guanfacine Z(0) and control Z(0)
+
+gp = 1/(tau_m*1e3) // works fine but need to figure out the units
+d = sqrt((1/(3.14*Z0*gp)))*1e4
+vh = -125
+dvh = 25
+Ih_speed = 1
+
+
+//=================== creating cell object ===========================
+create soma
+access soma
+soma { diam = d L = d nseg = 1
+		cm = 1
+		Ra = 100
+		insert pas
+		e_pas = v_init
+		g_pas = gp
+		insert  Ih
+  		gIhbar_Ih = 0
+		vhalf_Ih = vh
+
+	}
+access soma
+//=================== settings ================================
+
+
+
+
+vhalf_Ih = vh
+speed_scale_Ih = Ih_speed
+init()
+m0 = soma.m_Ih(0.5)
+vhalf_Ih = vh-dvh
+init()
+m1 = soma.m_Ih(0.5)
+gh = 1*(delta_Z*area(0.5)*1e-8*((g_pas+gIhbar_Ih*m1)^2))/(1-delta_Z*area(0.5)*1e-8*(g_pas+gIhbar_Ih*m1) )
+
+print m0,m1
+soma { 
+    gIhbar_Ih =  gh/(m0-m1)
+}
+d = sqrt((1/(3.14*Z0*(gp+gIhbar_Ih*m1))))*1e4
+diam =d
+L=d
+
+objref imp
+imp = new Impedance(0.5)
+imp.loc(0.5)
+objref c,cl,g,gl,x,gg,ggl,f
+cl = new Vector(20,10)
+gl = new Vector(20,10)
+c = new Vector(20,0)
+g = new Vector(20,0)
+x = new Vector()
+x.indgen(1,20,1)
+f = new File()
+
+proc doit() { 
+      init($1)
+    for (i=1;i<=20;i=i+1) {
+     print i 
+     	 vhalf_Ih = $2
+	 v_init = $1
+	 init()
+	 imp.compute(i,1)
+     	 cl.x(i-1) = log10(imp.input(0.5)) // cluclate the impedacnce for this frequency with a quasi active model
+	 c.x(i-1) = imp.input(0.5) // cluclate the impedacnce for this frequency with a quasi active model
+	 vhalf_Ih = $3
+	 init()
+	 imp.compute(i,1)	
+	 g.x(i-1) = imp.input(0.5) // cluclate the impedacnce for this frequency with a quasi active model
+	 gl.x(i-1) = log10(imp.input(0.5)) // cluclate the impedacnce for this frequency with a quasi active model
+	 } 
+
+	 ggl = new Graph()
+	 cl.line(ggl,x)
+	 ggl.exec_menu("Keep Lines")
+	 gl.line(ggl,x)
+	 ggl.exec_menu("View = plot")
+	 
+	 gg = new Graph()
+	 c.line(gg,x)
+	 gg.exec_menu("Keep Lines")
+	 g.line(gg,x)
+	 gg.exec_menu("View = plot")
+	 
+	 
+	 print c.x(0)
+	 print g.x(0)
+	 print g.x(0) - c.x(0)
+	 
+     f.wopen("c.txt")
+     c.printf(f, "%g\n")
+     f.close()
+     
+
+     f.wopen("g.txt")
+     g.printf(f, "%g\n")
+     f.close()	 
+     }
+     
+     
+     doit(v_init,vh,vh-dvh)
+     
+     
+
+
+objref st1,zapi 
+dur = 24000
+st1 = new IClamp(0.5)
+st1.amp = 0
+st1.dur = dur 
+st1.del = 1000
+
+zapi = new Vector(24000)
+objref f
+f = new File()
+f.ropen("ic1000.txt","r")
+zapi.scanf(f)
+f.close()
+zapi.mul(1e9)
+zapi.play(&st1.amp, 1)

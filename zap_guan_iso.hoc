@@ -1,0 +1,135 @@
+// Mickey London (2014) 
+// Iso potential cell with Ih - check how the spectrum changes when ZAP current is 
+// injected and when Ih activation curve is shifted
+
+
+//====================== General files and tools =====================
+load_file("nrngui.hoc")
+
+//====================== cvode =======================================
+objref cvode
+
+cvode = new CVode()
+cvode.active(0)
+dt = 1
+tstop = 28000
+
+//=================== creating cell object ===========================
+create soma
+access soma
+soma { diam = 10 L = 10 nseg = 1
+		cm = 1
+		Ra = 100
+		insert pas
+		e_pas = -80
+		insert Ih
+  		gIhbar_Ih = 0.0001 
+		g_pas = 3e-5
+	}
+
+//=================== settings ================================
+
+strdef experiment_type
+
+v_init = -80
+
+//somatic pulse settings
+squareAmp = 1.9 
+
+
+//======================== stimulus settings ============================
+
+//Somatic pulse // Miki modified to a train.
+objref st1,zapi 
+
+
+dur = 20000
+st1 = new IClamp(0.5)
+st1.amp = 0
+st1.dur = dur 
+st1.del = 1000
+
+zapi = new Vector(20698)
+/*
+zapi.indgen(0,1/1000)
+zapi.mul(zapi)
+zapi.mul(zapi)
+zapi.mul(3.14)
+zapi.apply("sin")
+*/
+objref f
+f = new File()
+f.ropen("izaplog.txt","r")
+zapi.scanf(f)
+f.close()
+zapi.mul(1e12)
+zapi.play(&st1.amp, 1)
+
+
+
+//======================== recording settings ============================
+objref vsoma, vdend, recSite, vdend2, isoma,tvec,sl
+tvec = new Vector()
+vsoma = new Vector()
+
+cvode.record(&v(0.5),vsoma,tvec)
+
+isoma = new Vector()
+cvode.record(&st1.i,isoma,tvec)
+
+//======================= plot settings ============================
+
+tstop = 6000
+newPlotV()
+Graph[0].exec_menu("Keep Lines")
+
+objref gV, gI, s
+
+gV = new Graph()
+gV.size(280,480,-80,40)
+gV.label(0.5,0.95,"V")
+
+gI = new Graph()
+gI.size(280,480,-6,6)
+gI.label(0.5,0.95,"I")
+
+//============================= simulation ================================
+
+objref outfile
+outfile = new File()
+strdef outfilename
+
+proc savetrace(){local i 
+    sprint(outfilename,"%s_%02d.txt",$s1,$2)
+    outfile.wopen(outfilename)
+    
+    vsoma.printf(outfile,"%f\n")
+    outfile.close()
+}
+
+for  shift = 1,10 { 
+    vhalf_Ih = -150+(shift-5)*5
+    forall {e_pas  = -90 } 
+    tstop = 400
+    v_init = -81
+     init()
+     run()
+     deltav = (-81-v)
+     print deltav
+     forall {e_pas = -90-1.8*(shift-5)}  
+     tstop = 400
+     init()
+     run()
+     print "V: ",v
+     
+     tstop = 6000
+     init()
+     run()
+     savetrace("v",shift)
+ }     
+
+sprint(outfilename,"izap.txt")
+outfile.wopen(outfilename)
+isoma.printf(outfile,"%f\n")
+outfile.close() 
+tstop = 400
